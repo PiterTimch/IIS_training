@@ -1,0 +1,9 @@
+numpy
+pandas
+matplotlib
+plotly
+statsmodels
+pmdarima
+scikit-learn
+requests
+joblib
