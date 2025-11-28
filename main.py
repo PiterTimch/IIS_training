@@ -87,6 +87,7 @@ def plot_decomposition(series, model='additive', period=365):
     res.resid.plot(ax=axes[3], title='Залишки')
     plt.tight_layout()
     plt.show()
+    plt.close()
 
 def train_sarimax(series, train_end_date):
     s = series.asfreq('D').ffill().bfill()
@@ -155,6 +156,7 @@ def plot_actual_pred(actual, pred, title="Фактичне vs Прогнозов
     plt.ylabel(f"Курс ({BASE}/{QUOTE})")
     plt.grid(alpha=0.3)
     plt.show()
+    plt.close()
 
 def plot_plotly(actual, pred, title="Фактичне vs Прогнозоване (інтерактивно)"):
     fig = go.Figure()
@@ -162,6 +164,32 @@ def plot_plotly(actual, pred, title="Фактичне vs Прогнозован�
     fig.add_trace(go.Scatter(x=pred.index, y=pred.values, mode='lines', name='Прогнозоване'))
     fig.update_layout(title=title, xaxis_title='Дата', yaxis_title=f'Курс ({BASE}/{QUOTE})')
     fig.show()
+
+def forecast_future_rf(model, df_feat, forecast_days):
+    last_row = df_feat.iloc[-1:].copy()
+    preds = []
+
+    for i in range(forecast_days):
+        X = last_row.drop(columns=['rate'])
+        pred = model.predict(X)[0]
+        preds.append(pred)
+
+        new_row = last_row.copy()
+        new_row['rate'] = pred
+        for lag in [1,2,3,7,14,30]:
+            if f'lag_{lag}' in new_row.columns:
+                new_row[f'lag_{lag}'] = last_row['rate'].shift(lag) if lag <= len(last_row) else last_row['rate'].values[0]
+        new_row['rolling_7'] = df_feat['rate'].iloc[-7:].mean()
+        new_row['rolling_30'] = df_feat['rate'].iloc[-30:].mean()
+        new_date = df_feat.index[-1] + pd.Timedelta(days=i+1)
+        new_row['dayofweek'] = new_date.dayofweek
+        new_row['month'] = new_date.month
+
+        last_row = new_row
+
+    future_index = pd.date_range(start=df_feat.index[-1]+pd.Timedelta(days=1), periods=forecast_days)
+    return pd.Series(preds, index=future_index)
+
 
 def main():
     if not os.path.exists(SAVE_MODEL_PATH):
@@ -190,6 +218,11 @@ def main():
     joblib.dump(sarimax_res, os.path.join(SAVE_MODEL_PATH, "sarimax_model.joblib"))
     joblib.dump(rf_model, os.path.join(SAVE_MODEL_PATH, "rf_model.joblib"))
     print("Моделі збережено у", SAVE_MODEL_PATH)
+
+    forecast_days = int(input("Скільки днів вперед прогнозувати? "))
+    rf_future_series = forecast_future_rf(rf_model, df_feat, forecast_days)
+    plot_actual_pred(pd.Series([np.nan]*forecast_days, index=rf_future_series.index),
+                    rf_future_series, title=f"RandomForest: Прогноз на {forecast_days} днів")
 
 if __name__ == "__main__":
     main()
